@@ -4,210 +4,337 @@ import glob
 import time
 import logging
 import argparse
+import subprocess
 
 import torch
 from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers.utils import logging as transformers_logging
 import decord
 import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
 
 
-print("torch version =", torch.__version__)
-print("cuda available =", torch.cuda.is_available())
-print("torch cuda version =", torch.version.cuda, "\n")
+load_dotenv()
 
-def sample_frames(video_path, num_frames = 8):
-    """
-    使用 decord 讀取影片並均勻抽幀
-    """
-    try:
-        # decord 預設為 cpu 讀取，也可以指定 ctx=decord.gpu(0) 如果有需要
-        vr = decord.VideoReader(video_path, ctx = decord.cpu(0))
-    except Exception as e:
-        logging.error(f"⚠️ 無法讀取影片 {video_path}: {e}")
-        return None
-    
-    total_frames = len(vr)
-    if total_frames == 0:
-        return None
-    
-    # 均勻取樣 num_frames 個幀
-    indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
-    frames = vr.get_batch(indices).asnumpy()
-    
-    # 轉換為 PIL Image 以符合 Transformers 預設處理器要求
-    pil_frames = [Image.fromarray(f) for f in frames]
-    return pil_frames
+
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+transformers_logging.set_verbosity_error()
+
+
+def get_hardware_name():
+	"""
+	取得硬體名稱(GPU優先)
+	"""
+	if torch.cuda.is_available():
+		return torch.cuda.get_device_name(0)
+	return os.uname().machine
+
+
+def get_gpu_power_watts():
+	"""
+	讀取目前 GPU 功耗（W）
+	若系統沒有 nvidia-smi 或不是 NVIDIA GPU，回傳 None
+	"""
+	try:
+		result = subprocess.check_output(
+				[
+					"nvidia-smi",
+					"--query-gpu=power.draw",
+					"--format=csv,noheader,nounits"
+					],
+				stderr=subprocess.DEVNULL
+				).decode("utf-8").strip().splitlines()
+
+		if len(result) > 0:
+			return float(result[0])
+		return None
+	except Exception:
+		return None
+
+
+def get_video_duration(video_reader):
+	"""
+	從 decord VideoReader 取得影片長度（秒）
+	"""
+	try:
+		fps = video_reader.get_avg_fps()
+		total_frames = len(video_reader)
+		if fps and fps > 0:
+			return total_frames / fps
+	except Exception:
+		pass
+	return None
+
+
+def sample_frames(video_path, num_frames=8):
+	"""
+	使用 decord 讀取影片並均勻抽幀
+	回傳:
+	  pil_frames: List[PIL.Image]
+	  video_duration_sec: float 或 None
+	  total_frames: int
+	  original_fps: float 或 None
+	"""
+	try:
+		vr = decord.VideoReader(video_path, ctx=decord.cpu(0))
+	except Exception as e:
+		logging.error(f"⚠️ 無法讀取影片 {video_path}: {e}")
+		return None, None, None, None
+
+	total_frames = len(vr)
+	if total_frames == 0:
+		return None, None, None, None
+
+	try:
+		original_fps = vr.get_avg_fps()
+	except Exception:
+		original_fps = None
+
+	video_duration_sec = get_video_duration(vr)
+
+	indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
+	frames = vr.get_batch(indices).asnumpy()
+
+	pil_frames = [Image.fromarray(f) for f in frames]
+	return pil_frames, video_duration_sec, total_frames, original_fps
+
 
 def main():
-    parser = argparse.ArgumentParser(description = "Run VLM inference on videos")
-    parser.add_argument("--video_dir", type = str, default = "./dataset/climbing_stair", help = "Directory containing mp4/mkv files")
-    parser.add_argument("--model_id", type = str, default = "google/gemma-3-4b-it", help = "Hugging Face model ID")
-    args = parser.parse_args()
+	parser = argparse.ArgumentParser(description="Run VLM inference benchmark on videos")
+	parser.add_argument("--video_dir", type=str, default="./dataset/climbing_stair",
+					 help="Directory containing mp4/mkv files")
+	parser.add_argument("--model_id", type=str, default="google/gemma-3-4b-it",
+					 help="Hugging Face model ID")
+	parser.add_argument("--num_frames", type=int, default=8,
+					 help="Fixed number of sampled frames per video")
+	parser.add_argument("--sample_size", type=int, default=10,
+					 help="Number of videos to randomly sample")
+	args = parser.parse_args()
 
-    # 取得 ground_truth_name (將路徑最後的資料夾名稱視為 ground_truth)
-    # 例如：傳入 "three_classes/falling_off_chair"，則 ground_truth_name 為 "falling_off_chair"
-    # 若 args.video_dir 若有結尾斜線，需用 os.path.normpath 處理
-    clean_video_dir = os.path.normpath(args.video_dir)
-    ground_truth_name = os.path.basename(clean_video_dir)
-    if not ground_truth_name or ground_truth_name == ".":
-        ground_truth_name = "default_ground_truth"
+	clean_video_dir = os.path.normpath(args.video_dir)
+	ground_truth_name = os.path.basename(clean_video_dir)
+	if not ground_truth_name or ground_truth_name == ".":
+		ground_truth_name = "default_ground_truth"
 
-    # 取得 model_id
-    model_id = args.model_id
-    model_name = model_id.split("/")[-1] # 取出模型名稱作為資料夾名稱
+	model_id = args.model_id
+	model_name = model_id.split("/")[-1].replace("-it", "")
 
-    # 建立輸出目錄: model_name
-    os.makedirs(model_name, exist_ok = True)
-    
-    # 定義輸出的 log 檔案名稱
-    # model_name/ground_truth_name.log
-    main_log_file = os.path.join(model_name, f"{ground_truth_name}.log")
+	log_dir = f"{model_name}_{args.num_frames}frames"
+	os.makedirs(log_dir, exist_ok=True)
+	main_log_file = os.path.join(log_dir, f"{ground_truth_name}.log")
 
-    # 設定 logging，同時將結果輸出到終端機與 log 檔案
-    logging.basicConfig(
-        level = logging.INFO,
-        format = '%(message)s', # 簡化輸出格式，移除 asctime 避免太冗長
-        handlers = [
-            logging.FileHandler(main_log_file, encoding = "utf-8", mode = 'a'),
-            logging.StreamHandler()
-        ]
-    )
-    
-    hf_token = os.environ.get("HF_TOKEN")
+	logging.basicConfig(
+			level=logging.INFO,
+			format="%(message)s",
+			handlers=[
+				logging.FileHandler(main_log_file, encoding="utf-8", mode="a"),
+				logging.StreamHandler()
+				]
+			)
+	logging.getLogger().setLevel(logging.INFO)
 
-    logging.info(f"載入模型與處理器: {model_id} ...")
-    try:
-        processor = AutoProcessor.from_pretrained(model_id, token = hf_token)
-        # 使用 bfloat16 以節省 VRAM 並加速
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            token = hf_token,
-            dtype = torch.bfloat16, 
-            device_map = "auto"
-        )
-    except Exception as e:
-        logging.error(f"載入模型失敗，請確認已安裝最新版 transformers 並且有 Gemma 3 的存取權限: {e}")
-        return
-    
-    # 尋找本地影片檔案，直接從 mp4 資料夾讀取
-    video_dir = args.video_dir
-    video_paths = glob.glob(os.path.join(video_dir, "**/*.mp4"), recursive = True) + glob.glob(os.path.join(video_dir, "**/*.mkv"), recursive = True)
-        
-    logging.info(f"從 {video_dir} 尋找，共找到 {len(video_paths)} 支影片。")
-    print("video amounts: ", len(video_paths))
-    if len(video_paths) == 0:
-        logging.error("❌ 找不到任何影片檔案，請確認下載已完成且解壓縮。")
-        return
-        
-    # 前面您修改成隨機抽取 1 支，若要測 100 支請將此處數字改為 100
-    sample_size = min(50, len(video_paths))
-    sampled_videos = random.sample(video_paths, sample_size)
-    logging.info(f"開始測試，隨機抽取 {sample_size} 支影片進行推論...")
-    
-    prompt_text = (
-        "Describe the main action accurately in under 10 words."
-    )
-    
-    results = []
-    total_time = 0.0
-    total_generated_tokens = 0
-    successful_runs = 0
-    num_sampled_frames = 8
-    
-    for i, v_path in enumerate(sampled_videos):
-        logging.info(f"{'='*50}")
-        logging.info(f"[{i+1}/{sample_size}] 處理影片: {v_path}")
-        
-        frames = sample_frames(v_path, num_frames=num_sampled_frames)
-        if frames is None:
-#	    logging.warning(f"⏩ 影片讀取失敗，可能是檔案損毀或下載不完全 (例如 missing moov atom) ➜ 略過: {v_path}")
-            continue
-            
-        # 建立 Gemma 3 多模態對話格式所需的 Message 結構
-        # 將 num_sampled_frames 張圖片傳入
-        content_items = [{"type": "image"} for _ in range(len(frames))]
-        content_items.append({"type": "text", "text": prompt_text})
-        
-        messages = [
-            {
-                "role": "user",
-                "content": content_items
-            }
-        ]
-        
-        try:
-            # 使用 Chat Template 建立正確的 Prompt 格式
-            formatted_prompt = processor.apply_chat_template(messages, add_generation_prompt = True)
-            
-            # 使用 Device Map 將 Input 自動放到適合的 GPU/CPU
-            inputs = processor(
-                text = formatted_prompt, 
-                images = frames, 
-                return_tensors = "pt"
-            ).to(model.device)
-            
-            # 將 bfloat16 用於 pixel_values（如果可用）以避免型別錯誤
-            if "pixel_values" in inputs:
-                inputs["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
+	hf_token = os.environ.get("HF_TOKEN")
+	hardware_name = get_hardware_name()
 
-            logging.info("開始生成回答...")
-            start_time = time.time()
-            
-            # 模型推論
-            with torch.no_grad():
-                output_ids = model.generate(
-                    **inputs,
-                    max_new_tokens = 150,
-                    do_sample = False, # 設為 False 進行 Greedy Decode 確保測試的穩定性
-                    temperature = None,
-                    top_p = None
-                )
-                
-            # 去除輸入 prompt 部分的 Token
-            generated_ids = output_ids[0][inputs['input_ids'].shape[1]:]
-            response = processor.decode(generated_ids, skip_special_tokens = True)
-            
-            end_time = time.time()
-            elapsed = end_time - start_time
-            num_generated_tokens = len(generated_ids)
-            tps = num_generated_tokens / elapsed if elapsed > 0 else 0
-            
-            logging.info(f"⏱️ 耗時: {elapsed:.2f} 秒")
-            logging.info(f"⚡ 速度: {tps:.2f} tokens/sec ({num_generated_tokens} tokens)")
-            logging.info(f"🤖 模型回答:\n{response.strip()}")
-            logging.info("-" * 30) # 新增分隔線，取代原本寫入 details log 的動作
-                
-            results.append({
-                "video": v_path,
-                "time": elapsed,
-                "tokens": num_generated_tokens,
-                "tps": tps,
-                "response": response.strip()
-            })
-            
-            total_time += elapsed
-            total_generated_tokens += num_generated_tokens
-            successful_runs += 1
-            
-        except Exception as e:
-            logging.error(f"❌ 推論過程中發生錯誤: {e}")
-            
-    # 統計並輸出最終結果
-    if successful_runs > 0:
-        avg_time = total_time / successful_runs
-        avg_tps = total_generated_tokens / total_time if total_time > 0 else 0
-        peak_vram = torch.cuda.max_memory_allocated() / (1024 ** 3)
-        
-        logging.info(f"\n{'='*20} 測試總結 {'='*20}")
-        logging.info(f"成功處理影片數  : {successful_runs} / {sample_size}")
-        logging.info(f"總耗費時間      : {total_time:.2f} 秒")
-        logging.info(f"總生成 Tokens 數: {total_generated_tokens}")
-        logging.info(f"平均每支影片耗時: {avg_time:.2f} 秒")
-        logging.info(f"整體生成速度    : {avg_tps:.2f} tokens/sec")
-        if torch.cuda.is_available():
-            logging.info(f"GPU 最高記憶體佔用: {peak_vram:.2f} GB")
-        logging.info(f"詳細測試結果已隨時記錄於 {main_log_file}")
+	logging.info(f"載入模型與處理器: {model_id} ... \n")
+	try:
+		processor = AutoProcessor.from_pretrained(model_id, token=hf_token)
+		model = AutoModelForCausalLM.from_pretrained(
+				model_id,
+				token=hf_token,
+				torch_dtype=torch.bfloat16,
+				device_map="auto"
+				)
+	except Exception as e:
+		logging.error(f"載入模型失敗: {e}")
+		return
+
+	if torch.cuda.is_available():
+		torch.cuda.reset_peak_memory_stats()
+
+	video_dir = args.video_dir
+	video_paths = glob.glob(os.path.join(video_dir, "**/*.mp4"), recursive=True)
+	video_paths += glob.glob(os.path.join(video_dir, "**/*.mkv"), recursive=True)
+
+	logging.info(f"\n從 {video_dir} 尋找，共找到 {len(video_paths)} 支影片。\n")
+	if len(video_paths) == 0:
+		logging.error("❌ 找不到任何影片檔案。")
+		return
+
+	sample_size = min(args.sample_size, len(video_paths))
+	sampled_videos = random.sample(video_paths, sample_size)
+
+	logging.info(f"開始測試，隨機抽取 {sample_size} 支影片進行推論...\n")
+	logging.info(f"Hardware Name: {hardware_name}")
+	logging.info(f"Fixed Frames : {args.num_frames}")
+
+	prompt_text = "Describe the main action accurately in under 10 words."
+
+	results = []
+	total_time = 0.0
+	total_generated_tokens = 0
+	successful_runs = 0
+	total_video_duration = 0.0
+	valid_duration_count = 0
+	power_readings = []
+
+	for i, v_path in enumerate(sampled_videos):
+		logging.info(f"\n{'=' * 60}")
+		logging.info(f"[{i+1}/{sample_size}] 處理影片: {v_path}")
+
+		frames, video_duration_sec, total_video_frames, original_fps = sample_frames(
+				v_path, num_frames=args.num_frames
+				)
+
+		if frames is None:
+			continue
+
+		content_items = [{"type": "image"} for _ in range(len(frames))]
+		content_items.append({"type": "text", "text": prompt_text})
+
+		messages = [
+				{
+					"role": "user",
+					"content": content_items
+					}
+				]
+
+		try:
+			formatted_prompt = processor.apply_chat_template(
+					messages,
+					add_generation_prompt=True
+					)
+
+			inputs = processor(
+					text=formatted_prompt,
+					images=frames,
+					return_tensors="pt"
+					).to(model.device)
+
+			if "pixel_values" in inputs:
+				inputs["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
+
+			start_power = get_gpu_power_watts()
+			start_time = time.time()
+
+			with torch.no_grad():
+				output_ids = model.generate(
+						**inputs,
+						max_new_tokens=150,
+						do_sample=False,
+						temperature=None,
+						top_p=None
+						)
+
+			end_time = time.time()
+			end_power = get_gpu_power_watts()
+
+			generated_ids = output_ids[0][inputs["input_ids"].shape[1]:]
+			response = processor.decode(generated_ids, skip_special_tokens=True)
+
+			elapsed = end_time - start_time
+			num_generated_tokens = len(generated_ids)
+			tps = num_generated_tokens / elapsed if elapsed > 0 else 0.0
+			sampled_fps = len(frames) / elapsed if elapsed > 0 else 0.0
+
+			if start_power is not None and end_power is not None:
+				power_readings.append((start_power + end_power) / 2.0)
+			elif start_power is not None:
+				power_readings.append(start_power)
+			elif end_power is not None:
+				power_readings.append(end_power)
+
+			if video_duration_sec is not None:
+				total_video_duration += video_duration_sec
+				valid_duration_count += 1
+
+			logging.info(f"影片長度: {video_duration_sec:.2f} sec" if video_duration_sec is not None else "影片長度: N/A")
+			logging.info(f"Average Query Latency: {elapsed:.2f} sec")
+			logging.info(f"Frames Per Second: {sampled_fps:.2f}")
+			logging.info(f"Throughput: {tps:.2f} tokens/sec")
+			logging.info(f"模型回答: {response.strip()}")
+			logging.info("-" * 40)
+
+			results.append({
+				"video": v_path,
+				"query_latency_sec": elapsed,
+				"video_duration_sec": video_duration_sec,
+				"tokens": num_generated_tokens,
+				"throughput_tps": tps,
+				"frames_per_second": sampled_fps,
+				"response": response.strip()
+				})
+
+			total_time += elapsed
+			total_generated_tokens += num_generated_tokens
+			successful_runs += 1
+
+		except Exception as e:
+			logging.error(f"❌ 推論過程中發生錯誤: {e}")
+
+	if successful_runs > 0:
+		avg_query_latency = total_time / successful_runs
+		avg_throughput = total_generated_tokens / total_time if total_time > 0 else 0.0
+		avg_frames_per_second = (args.num_frames * successful_runs) / total_time if total_time > 0 else 0.0
+
+		avg_video_duration = (
+				total_video_duration / valid_duration_count
+				if valid_duration_count > 0 else None
+				)
+
+		# Equivalent Real-time Latency = 平均推論時間 / 平均影片長度
+		# < 1 代表 faster than real-time
+		equivalent_real_time_latency = (
+				avg_query_latency / avg_video_duration
+				if avg_video_duration and avg_video_duration > 0 else None
+				)
+
+		peak_vram = None
+		if torch.cuda.is_available():
+			peak_vram = torch.cuda.max_memory_allocated() / (1024 ** 3)
+
+		avg_power = (
+				sum(power_readings) / len(power_readings)
+				if len(power_readings) > 0 else None
+				)
+
+		logging.info(f"\n{'=' * 20} Benchmark Summary {'=' * 20}\n")
+		logging.info(f"Input")
+		logging.info(f"	Model: {model_id}")
+		logging.info(f"	Hardware Name  : {hardware_name}")
+		logging.info(f"	Video Dir      : {video_dir}")
+		logging.info(f"	Fixed Frames   : {args.num_frames}")
+		logging.info("\n")
+		logging.info("Output")
+		logging.info(f"	Average Query Latency: {avg_query_latency:.4f} sec")
+		logging.info(f"	Frames Per Second: {avg_frames_per_second:.4f}")
+		if equivalent_real_time_latency is not None:
+			logging.info(f"	Equivalent Real-time Latency (RTF): {equivalent_real_time_latency:.4f}")
+		else:
+			logging.info(f"	Equivalent Real-time Latency (RTF): N/A")
+		if peak_vram is not None:
+			logging.info(f"	Peak VRAM Usage: {peak_vram:.4f} GB")
+		else:
+			logging.info(f"	Peak VRAM Usage: N/A")
+		logging.info(f"	Throughput: {avg_throughput:.4f} tokens/sec")
+		if avg_power is not None:
+			logging.info(f"	Power Consumption: {avg_power:.2f} W")
+		else:
+			logging.info(f"Power Consumption: N/A")
+
+		logging.info("\n")
+		logging.info(f"成功處理影片數: {successful_runs} / {sample_size}")
+		if avg_video_duration is not None:
+			logging.info(f"平均影片長度: {avg_video_duration:.4f} sec")
+		logging.info(f"詳細測試結果已記錄於: {main_log_file}")
+	else:
+		logging.info("沒有成功完成任何影片推論。")
+
 
 if __name__ == "__main__":
-    main()
+	main()
