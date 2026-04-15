@@ -67,7 +67,7 @@ def evaluate_with_gpt5(client, answer, label):
 You are an expert and impartial evaluator for Vision-Language Models (VLMs).
 
 A VLM was asked:
-"Describe the main action accurately in under 10 words."
+"These are uniformly sampled frames from a video. Analyze what action is happening."
 
 Ground Truth Action:
 {label}

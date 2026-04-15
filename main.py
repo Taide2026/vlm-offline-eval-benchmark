@@ -174,7 +174,7 @@ def main():
 	logging.info(f"Hardware Name: {hardware_name}")
 	logging.info(f"Fixed Frames : {args.num_frames}")
 
-	prompt_text = "Describe the main action accurately in under 10 words."
+	prompt_text = "These are uniformly sampled frames from a video. Analyze what action is happening."
 
 	results = []
 	total_time = 0.0
