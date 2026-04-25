@@ -75,9 +75,10 @@ VLM Output:
 {answer}
 
 Evaluate the output using these criteria:
-1. Does it correctly identify the core action?
-2. Is it concise and relevant?
-3. Does it avoid hallucinations or unrelated details?
+1. Does it correctly identify the core action ?
+2. Is it concise and relevant ?
+3. Does it avoid hallucinations or unrelated details ?
+4. Does it reply with English ?
 
 Return exactly in this format:
 Score: [0-10]

@@ -113,7 +113,7 @@ def main():
 					 help="Hugging Face model ID")
 	parser.add_argument("--num_frames", type=int, default=8,
 					 help="Fixed number of sampled frames per video")
-	parser.add_argument("--sample_size", type=int, default=1000,
+	parser.add_argument("--sample_size", type=int, default=5,
 					 help="Number of videos to randomly sample")
 	args = parser.parse_args()
 
@@ -174,7 +174,7 @@ def main():
 	logging.info(f"Hardware Name: {hardware_name}")
 	logging.info(f"Fixed Frames : {args.num_frames}")
 
-	prompt_text = "These are uniformly sampled frames from a video. Analyze what action is happening."
+	prompt_text = "These are uniformly sampled frames from a video. Analyze what action is happening with English."
 
 	results = []
 	total_time = 0.0
@@ -290,7 +290,7 @@ def main():
 				valid_duration_count += 1
 
 			logging.info(f"影片長度: {video_duration_sec:.2f} sec" if video_duration_sec is not None else "影片長度: N/A")
-			logging.info(f"Average Query Latency: {elapsed_ms:.2f} ms")
+			logging.info(f"Query Latency: {elapsed_ms:.2f} ms")
 			logging.info(f"TTFT: {ttft_ms:.2f} ms" if ttft_ms is not None else "TTFT: N/A")
 			logging.info(f"Frames Per Second: {sampled_fps:.2f}")
 			logging.info(f"Throughput: {tps:.2f} tokens/sec")
