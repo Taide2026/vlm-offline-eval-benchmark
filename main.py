@@ -72,9 +72,9 @@ def get_video_duration(video_reader):
 	return None
 
 
-def sample_frames(video_path, num_frames=8):
+def sample_frames(video_path, sample_fps=2.0):
 	"""
-	使用 decord 讀取影片並均勻抽幀
+	使用 decord 讀取影片，依指定 FPS 抽幀
 	回傳:
 	  pil_frames: List[PIL.Image]
 	  video_duration_sec: float 或 None
@@ -98,7 +98,23 @@ def sample_frames(video_path, num_frames=8):
 
 	video_duration_sec = get_video_duration(vr)
 
-	indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
+	if not original_fps or original_fps <= 0:
+		logging.error(f"⚠️ 無法取得影片 FPS，略過影片 {video_path}")
+		return None, None, None, None
+
+	if sample_fps <= 0:
+		logging.error(f"⚠️ sample_fps 必須大於 0，目前為 {sample_fps}")
+		return None, None, None, None
+
+	duration_sec = video_duration_sec if video_duration_sec is not None else total_frames / original_fps
+	timestamps = np.arange(0, duration_sec, 1.0 / sample_fps)
+	indices = np.floor(timestamps * original_fps).astype(int)
+	indices = np.clip(indices, 0, total_frames - 1)
+	indices = np.unique(indices)
+
+	if len(indices) == 0:
+		indices = np.array([0], dtype=int)
+
 	frames = vr.get_batch(indices).asnumpy()
 
 	pil_frames = [Image.fromarray(f) for f in frames]
@@ -111,8 +127,8 @@ def main():
 					 help="Directory containing mp4/mkv files")
 	parser.add_argument("--model_id", type=str, default="google/gemma-3-4b-it",
 					 help="Hugging Face model ID")
-	parser.add_argument("--num_frames", type=int, default=8,
-					 help="Fixed number of sampled frames per video")
+	parser.add_argument("--sample_fps", type=float, default=2.0,
+					 help="Number of frames sampled per second")
 	parser.add_argument("--sample_size", type=int, default=1000,
 					 help="Number of videos to randomly sample")
 	args = parser.parse_args()
@@ -125,7 +141,7 @@ def main():
 	model_id = args.model_id
 	model_name = model_id.split("/")[-1].replace("-it", "")
 
-	log_dir = f"{model_name}-{args.num_frames}frames"
+	log_dir = f"{model_name}-{args.sample_fps:g}fps"
 	os.makedirs(log_dir, exist_ok=True)
 	main_log_file = os.path.join(log_dir, f"{ground_truth_name}.log")
 
@@ -172,7 +188,7 @@ def main():
 
 	logging.info(f"開始測試，隨機抽取 {sample_size} 支影片進行推論...\n")
 	logging.info(f"Hardware Name: {hardware_name}")
-	logging.info(f"Fixed Frames : {args.num_frames}")
+	logging.info(f"Sample FPS   : {args.sample_fps:g}")
 
 	prompt_text = "These are uniformly sampled frames from a video. Analyze what action is happening with English."
 
@@ -181,6 +197,7 @@ def main():
 	total_generated_tokens = 0
 	successful_runs = 0
 	total_video_duration = 0.0
+	total_sampled_frames = 0
 	valid_duration_count = 0
 	power_readings = []
 	ttft_values_sec = []
@@ -190,7 +207,7 @@ def main():
 		logging.info(f"[{i+1}/{sample_size}] 處理影片: {v_path}")
 
 		frames, video_duration_sec, total_video_frames, original_fps = sample_frames(
-				v_path, num_frames=args.num_frames
+				v_path, sample_fps=args.sample_fps
 				)
 
 		if frames is None:
@@ -311,6 +328,7 @@ def main():
 
 			total_time += elapsed_sec
 			total_generated_tokens += num_generated_tokens
+			total_sampled_frames += len(frames)
 			successful_runs += 1
 
 			if ttft_sec is not None:
@@ -323,7 +341,7 @@ def main():
 		avg_query_latency_sec = total_time / successful_runs
 		avg_query_latency_ms = avg_query_latency_sec * 1000.0
 		avg_throughput = total_generated_tokens / total_time if total_time > 0 else 0.0
-		avg_frames_per_second = (args.num_frames * successful_runs) / total_time if total_time > 0 else 0.0
+		avg_frames_per_second = total_sampled_frames / total_time if total_time > 0 else 0.0
 
 		avg_video_duration = (
 				total_video_duration / valid_duration_count
@@ -357,7 +375,7 @@ def main():
 		logging.info(f"	Model: {model_id}")
 		logging.info(f"	Hardware Name  : {hardware_name}")
 		logging.info(f"	Video Dir      : {video_dir}")
-		logging.info(f"	Fixed Frames   : {args.num_frames}")
+		logging.info(f"	Sample FPS     : {args.sample_fps:g}")
 
 		logging.info("\nOutput")
 		logging.info(f"	Average Query Latency: {avg_query_latency_ms:.2f} ms")
