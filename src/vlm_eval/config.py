@@ -5,8 +5,7 @@ from pathlib import Path
 
 
 DEFAULT_PROMPT = (
-    "These are uniformly sampled frames from a video. "
-    "Analyze what action is happening with English."
+    "Describe the main action briefly in 2~6 words."                                                               
 )
 
 
