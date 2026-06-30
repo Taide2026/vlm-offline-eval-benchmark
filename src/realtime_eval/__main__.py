@@ -98,7 +98,7 @@ def _init_config(target: Path, force: bool = False) -> int:
         )
         return 1
 
-    payload = {"videos": "data/labeled_videos", "limit": None, **SweepConfig().to_dict()}
+    payload = {"videos": "video.mp4", "limit": None, **SweepConfig().to_dict()}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote default sweep config to {target}")

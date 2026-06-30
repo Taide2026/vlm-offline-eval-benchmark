@@ -6,14 +6,17 @@ from typing import Any
 
 
 DEFAULT_REALTIME_PROMPT = (
-    "Describe the main action happening in this video in one short sentence."
+    "Detect if any accident happens, if yes, describe the main accident in one concise sentence with 3 to 5 words, otherwise, say everything is normal."
 )
 
 # The two fine-tuned candidates. gemma-3-4b is intentionally excluded: project
 # memory notes it hangs on V100 and has a double-BOS issue.
 DEFAULT_MODEL_IDS: tuple[str, ...] = (
-    "bear7011/gemma4-e2b-webvid4K_FT",
-    "bear7011/gemma4-e4b-webvid4K_FT",
+    "google/gemma-4-E2B-it",
+    "THChou1220/gemma-4-e2b-kinetics54K_FFT",
+    "google/gemma-4-E4B-it",
+    "THChou1220/gemma-4-e4b-kinetics9K_FFT",
+    "THChou1220/gemma-4-e4b-kinetics54K_FFT",
 )
 
 
@@ -43,7 +46,7 @@ class SweepConfig:
     """
 
     model_ids: tuple[str, ...] = DEFAULT_MODEL_IDS
-    num_frames_grid: tuple[int, ...] = (4, 8, 12, 16)
+    num_frames_grid: tuple[int, ...] = (8, 12, 16)
     max_new_tokens_grid: tuple[int, ...] = (20, 40)
     repeats: int = 5
     warmup: int = 2
