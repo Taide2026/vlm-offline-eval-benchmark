@@ -37,6 +37,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("config", type=Path, help="Path to a JSON sweep config file.")
 
+    sweep_vllm = sub.add_parser(
+        "sweep-vllm",
+        help="Run the benchmark sweep on the vLLM backend (requires the 'vllm' extra).",
+        description=(
+            "Same as 'sweep' but models are served by vLLM instead of "
+            "transformers. Takes the same JSON config and writes the same "
+            "output format. Requires the optional vLLM dependency: "
+            "uv sync --extra vllm."
+        ),
+    )
+    sweep_vllm.add_argument("config", type=Path, help="Path to a JSON sweep config file.")
+
     single = sub.add_parser(
         "single", help="Run one model on one video to verify the pipeline."
     )
@@ -165,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sweep":
         videos, config, limit = _load_sweep_config(args.config)
         run_dir = run_sweep(videos, config, video_limit=limit)
+        print(analyze(run_dir, threshold=config.realtime_threshold))
+        return 0
+
+    if args.command == "sweep-vllm":
+        from realtime_eval.pipeline.sweep_vllm import run_sweep_vllm
+
+        videos, config, limit = _load_sweep_config(args.config)
+        run_dir = run_sweep_vllm(videos, config, video_limit=limit)
         print(analyze(run_dir, threshold=config.realtime_threshold))
         return 0
 

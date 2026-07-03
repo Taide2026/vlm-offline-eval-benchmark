@@ -24,6 +24,14 @@ dependencies = [
   "opencv-python-headless>=4.13.0.92",
 ]
 
+# Optional: vLLM backend for `realtime-bench sweep-vllm`. Not installed by
+# default because vLLM is unavailable/heavy on some machines.
+# Install with: uv sync --extra vllm
+# aarch64-only: recent vLLM requires torch>=2.9, which conflicts with the
+# torch==2.5.1 pin on x86_64 above.
+[project.optional-dependencies]
+vllm = ["vllm>=0.24.0; platform_machine == 'aarch64' and sys_platform == 'linux'"]
+
 [project.scripts]
 vlm-benchmark = "vlm_eval.cli:benchmark_main"
 vlm-judge = "vlm_eval.cli:judge_main"

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -98,6 +100,8 @@ def run_sweep(
     videos_root: Path,
     config: SweepConfig,
     video_limit: int | None = None,
+    backend: str = "python-transformers",
+    model_loader: Callable[[str, str | None], Any] | None = None,
 ) -> Path:
     """Run the full real-time sweep and write results to a timestamped run dir.
 
@@ -109,6 +113,11 @@ def run_sweep(
         videos_root: Directory of labeled videos (or a single video file).
         config: Sweep grid and timing parameters.
         video_limit: Optional cap on number of videos used.
+        backend: Backend name recorded in the run's ``config.json``.
+        model_loader: ``(model_id, hf_token) -> model`` factory returning any
+            object with a ``generate_from_frames`` method compatible with
+            :class:`vlm_eval.inference.gemma.HuggingFaceVLM`. Defaults to the
+            transformers-based :func:`realtime_eval.pipeline.runner.load_model`.
 
     Returns:
         Path to the created run directory.
@@ -116,6 +125,8 @@ def run_sweep(
     load_dotenv()
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     hf_token = os.environ.get("HF_TOKEN")
+    if model_loader is None:
+        model_loader = load_model
 
     videos = discover_videos(Path(videos_root), limit=video_limit)
     hardware_name = get_hardware_name()
@@ -129,6 +140,7 @@ def run_sweep(
             "videos_root": str(videos_root),
             "num_videos": len(videos),
             "hardware_name": hardware_name,
+            "backend": backend,
             "model_ids": list(config.model_ids),
             "num_frames_grid": list(config.num_frames_grid),
             "max_new_tokens_grid": list(config.max_new_tokens_grid),
@@ -148,7 +160,7 @@ def run_sweep(
     for model_id in config.model_ids:
         logger.info("Loading model: %s", model_id)
         try:
-            model = load_model(model_id, hf_token=hf_token)
+            model = model_loader(model_id, hf_token)
         except Exception as exc:
             logger.error("Failed to load %s, skipping: %s", model_id, exc)
             continue
@@ -178,6 +190,7 @@ def run_sweep(
 
         # Free GPU memory before the next model.
         del model
+        gc.collect()
         try:
             import torch
 
