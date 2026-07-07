@@ -85,6 +85,14 @@ uv run intelli-bench -m google/gemma-3-4b-it -d ./my_dataset
 
 Outputs `predictions.jsonl` and a `summary.json` (mean cosine similarity) under `./intelligence_runs/<run_id>`.
 
+```bash
+# aggregate a sweep into <dir>/analyze.md (per-model LLM-judge 0-4 score counts)
+uv run scripts/analyze_intelligence.py intelli-sweep-new-scores-300
+
+# print one video's prompt and per-model response / llm_judge / nli table
+uv run scripts/show_video_result.py fall_from_bed_156.mp4 intelli-sweep-new-scores-300
+```
+
 ## Layout
 
 ```
