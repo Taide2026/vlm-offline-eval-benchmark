@@ -103,7 +103,7 @@ def run_intelligence_eval(config: IntelligenceConfig) -> Path | None:
     config_data["run_id"] = run_id
     write_json(run_dir / "config.json", config_data)
 
-    source = DatasetSource(config.dataset, hf_token=hf_token)
+    source = DatasetSource(config.dataset, hf_token=hf_token, metadata_csv=config.metacsv)
     rows = _select_rows(source.metadata_rows(), config)
     logger.info("Selected %d scorable videos from %s", len(rows), config.dataset)
     if not rows:

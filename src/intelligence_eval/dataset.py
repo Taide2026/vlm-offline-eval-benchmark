@@ -70,8 +70,14 @@ class DatasetSource:
     ~1.5k-video dataset.
     """
 
-    def __init__(self, source: str | Path, hf_token: str | None = None):
+    def __init__(
+        self,
+        source: str | Path,
+        hf_token: str | None = None,
+        metadata_csv: str | Path | None = None,
+    ):
         self.hf_token = hf_token
+        self.metadata_csv = str(metadata_csv) if metadata_csv else "metadata.csv"
         local = Path(source)
         self.local_dir: Path | None = local if local.exists() else None
         self.repo_id: str | None = None if self.local_dir else str(source)
@@ -96,7 +102,10 @@ class DatasetSource:
         Returns:
             One :class:`MetadataRow` per scorable row.
         """
-        metadata_path = self._fetch("metadata.csv")
+        # A custom --metacsv that exists locally is used as-is; otherwise the
+        # ref is resolved against the dataset dir/repo like any other member.
+        local = Path(self.metadata_csv)
+        metadata_path = local if local.is_file() else self._fetch(self.metadata_csv)
         rows: list[MetadataRow] = []
         with metadata_path.open(newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):

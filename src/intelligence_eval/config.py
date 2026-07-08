@@ -36,6 +36,9 @@ class IntelligenceConfig:
         dataset: Dataset source: a HuggingFace dataset repo id (default) or a
             local directory containing ``metadata.csv`` plus the ``videos/``
             and ``records/`` trees it references.
+        metacsv: Custom metadata CSV (same schema as ``metadata.csv``): a
+            local file path, or a ref resolved against the dataset.
+            ``None`` uses the dataset's ``metadata.csv``.
         model_id: HuggingFace VLM ID to evaluate.
         prompt: Instruction sent to the VLM with the sampled frames.
         num_frames: Frames sampled per video.
@@ -53,6 +56,7 @@ class IntelligenceConfig:
 
     model_id: str
     dataset: str = DEFAULT_DATASET
+    metacsv: str | None = None
     prompt: str = DEFAULT_PROMPT
     num_frames: int = 8
     max_new_tokens: int = 150

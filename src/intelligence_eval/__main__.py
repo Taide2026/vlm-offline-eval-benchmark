@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> int:
         "--dataset", "-d", default=DEFAULT_DATASET,
         help=f"HuggingFace dataset repo id or local dir (default: {DEFAULT_DATASET}).",
     )
+    parser.add_argument(
+        "--metacsv", default=None,
+        help="Custom metadata CSV (same schema as metadata.csv): a local file "
+        "path, or a ref resolved against the dataset (default: metadata.csv).",
+    )
     parser.add_argument("--model_id", "-m", required=True, help="HuggingFace VLM ID to evaluate.")
     parser.add_argument("--prompt", "-p", default=DEFAULT_PROMPT, help="Prompt sent to the VLM.")
     parser.add_argument("--num_frames", "-n", type=int, default=8)
@@ -48,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = IntelligenceConfig(
         dataset=args.dataset,
+        metacsv=args.metacsv,
         model_id=args.model_id,
         prompt=args.prompt,
         num_frames=args.num_frames,
