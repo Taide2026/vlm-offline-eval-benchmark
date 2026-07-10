@@ -57,6 +57,20 @@ uv run realtime-bench analyze runs/<run_id> --threshold 0.8
 
 The sweep config (`sweep-conf.json`) sets `videos`, `model_ids`, `num_frames_grid`, `max_new_tokens_grid`, `repeats`, etc. Omitted fields use defaults.
 
+### Running the vLLM sweep in Docker
+
+The vLLM backend (`sweep-vllm`) can run in a container instead of the host venv. The image (aarch64/GB10) installs the locked deps with the `vllm` extra on a CUDA 13.0 devel base — the full toolkit is required because FlashInfer JIT-compiles kernels with `nvcc` at first model load (a few minutes, cached afterwards).
+
+```bash
+# build once (~20 GB image; rebuild only when pyproject.toml/uv.lock/src change)
+docker build -t realtime-bench .
+
+# run a sweep; args are passed straight to realtime-bench
+./docker-run.sh sweep-vllm sweep-conf.json
+```
+
+`docker-run.sh` wires up everything the container needs: `--gpus all --ipc=host`, the `.env` file (for `HF_TOKEN`), the video and sweep configs (read-only), the output directory (results land on the host), and the HuggingFace + FlashInfer caches (models and JIT-compiled kernels persist across runs). Using a different video, config, or `output_root`? Edit the mounts in `docker-run.sh` to match — the output mount must equal the config's `output_root`.
+
 ## `intelligence_eval` — semantic similarity vs. Sora prompts
 
 Scores a model's video description against the prompt that generated the clip on the [Sora accidents dataset](sora-accidents-dataset.md). Defaults to the HuggingFace dataset `gnitoahc/sora-accidents-copy`.

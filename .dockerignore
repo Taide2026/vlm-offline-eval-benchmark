@@ -1,0 +1,5 @@
+# Whitelist: only what the Dockerfile copies.
+*
+!pyproject.toml
+!uv.lock
+!src
