@@ -18,11 +18,16 @@ Required CSV columns:
     human_filter.csv: label, filename, score
     metadata.csv:     label, source_filename (all columns are copied to output)
 """
+import argparse
 import csv
-import sys
 from collections import Counter
 
-SCORE = sys.argv[1] if len(sys.argv) > 1 else "2"
+parser = argparse.ArgumentParser(
+    description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+)
+parser.add_argument("score", nargs="?", default="2",
+                    help="score value to keep (default: 2)")
+SCORE = parser.parse_args().score
 
 with open("human_filter.csv", newline="") as f:
     keep = {
