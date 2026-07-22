@@ -50,6 +50,7 @@ class IntelligenceConfig:
         bert_model: Encoder backing BERTScore.
         judge_model: Chat model used by the rubric LLM judge.
         judge_backend: Backend for the judge model (``None`` = auto-detect).
+        thinking: Enable the model's thinking mode in ``apply_chat_template``.
         output_root: Parent directory for run outputs.
         run_id: Explicit run id; ``None`` builds one from model/dataset/time.
     """
@@ -67,5 +68,6 @@ class IntelligenceConfig:
     bert_model: str = DEFAULT_BERT_MODEL
     judge_model: str = DEFAULT_JUDGE_MODEL
     judge_backend: str | None = None
+    thinking: bool = False
     output_root: Path = Path("intelligence_runs")
     run_id: str | None = None

@@ -27,6 +27,7 @@ class HuggingFaceVLM:
         frames: list[Any],
         prompt_text: str,
         max_new_tokens: int = 150,
+        enable_thinking: bool = False,
     ) -> dict[str, Any]:
         from transformers import TextIteratorStreamer
 
@@ -37,7 +38,7 @@ class HuggingFaceVLM:
         formatted_prompt = self.processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
-            enable_thinking=False,
+            enable_thinking=enable_thinking,
         )
 
         inputs = self.processor(

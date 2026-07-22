@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bert_model", default=DEFAULT_BERT_MODEL, help=f"default to {DEFAULT_BERT_MODEL}")
     parser.add_argument("--judge_model", default=DEFAULT_JUDGE_MODEL, help=f"default to {DEFAULT_JUDGE_MODEL}")
     parser.add_argument("--judge_backend", default=None, help="LLM judge backend (default: auto).")
+    parser.add_argument("--thinking", action="store_true",
+                        help="Enable the model's thinking mode when applying the chat template.")
     parser.add_argument("--output_root", type=Path, default=Path("intelligence_runs"))
     parser.add_argument("--run_id", default=None)
     args = parser.parse_args(argv)
@@ -65,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         bert_model=args.bert_model,
         judge_model=args.judge_model,
         judge_backend=args.judge_backend,
+        thinking=args.thinking,
         output_root=args.output_root,
         run_id=args.run_id,
     )

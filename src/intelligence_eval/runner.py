@@ -177,6 +177,7 @@ def _evaluate_item(
     try:
         generated = model.generate_from_frames(
             frames=frames, prompt_text=config.prompt, max_new_tokens=config.max_new_tokens,
+            enable_thinking=config.thinking,
         )
     except Exception as exc:
         return EvalResult(
